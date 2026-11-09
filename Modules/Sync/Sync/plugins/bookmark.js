@@ -147,8 +147,8 @@
         }
 
         /**
-         * Сверка идёт дельтами: сервер держит строку на карточку и курсор, и присылает только то,
-         * что менялось. Полный список тянем лишь когда курсора ещё нет.
+         * Сверка всегда полной выгрузкой: дельты (/changelog) не сохраняют порядок истории,
+         * из-за чего на разных устройствах список расходился. Курсор по-прежнему сохраняется.
          */
         function pullFromServer() {
           if (syncInProgress) { syncPending = true; return; }
@@ -162,10 +162,9 @@
             }
           }
 
-          var since = cursor();
-          var full = !since || since === '0';
+          var full = true;
 
-          ajax('GET', full ? '/dump' : '/changelog?since=' + encodeURIComponent(since), null, function(status, response) {
+          ajax('GET', '/dump', null, function(status, response) {
             if (status != 200 || !response) { complete(); return; }
 
             var data;
