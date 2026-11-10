@@ -87,6 +87,7 @@
         });
 
         _this.awaitBookmarks(0);
+        _this.update();
 
         // Список закладок доступен только в узком окне сразу после входа и нигде не сохраняется.
         // Поэтому ждём не только на старте: вход может случиться сильно позже.
@@ -181,6 +182,11 @@
       key: "update",
       value: function update() {
         var _this2 = this;
+        var activity = Lampa.Storage.get('activity', '{}');
+        var open = activity.movie || activity.card;
+        // /timecode/all отдаёт отметки одной карточки. На списках (главная, история) карточки нет,
+        // запрос уходит с 0_movie и возвращает пустоту, поэтому там берём всё одним дампом.
+        if (!open || !open.id) return this.updateAll();
         var url = this.url('all');
         this.network.silent(url, function(result) {
           if (result.accsdb) return;
@@ -202,6 +208,33 @@
         });
       }
 
+    }, {
+      /** Подтянуть отметки всех карточек: нужно спискам, где нет открытой карточки. */
+      key: "updateAll",
+      value: function updateAll() {
+        var _this6 = this;
+        this.network.silent(this.apiUrl('dump'), function(result) {
+          var rows = result && result.rows;
+          if (!rows || !rows.length) return;
+          var name = _this6.filename();
+          var viewed = Lampa.Storage.cache(name, 10000, {});
+          rows.forEach(function(row) {
+            if (!row.hash || row.deleted) return;
+            // Локальная отметка свежее серверной — её не трогаем.
+            if (viewed[row.hash] && viewed[row.hash].updated > row.watched_at) return;
+            var road = { time: row.position || 0, duration: row.duration || 0, percent: row.percent || 0, updated: row.watched_at || 0 };
+            if (row.extra) {
+              try {
+                var extra = JSON.parse(row.extra);
+                for (var key in extra) road[key] = extra[key];
+              } catch (e) {}
+            }
+            viewed[row.hash] = road;
+          });
+          Lampa.Storage.set(name, viewed, true);
+          if (typeof Lampa.Timeline.read === 'function') Lampa.Timeline.read();
+        }, function() {});
+      }
     }, {
       /** Адрес нативного эндпоинта: без card_id, он тут передаётся в самой строке. */
       key: "apiUrl",
