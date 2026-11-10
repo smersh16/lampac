@@ -220,8 +220,10 @@
           var viewed = Lampa.Storage.cache(name, 10000, {});
           rows.forEach(function(row) {
             if (!row.hash || row.deleted) return;
-            // Локальная отметка свежее серверной — её не трогаем.
-            if (viewed[row.hash] && viewed[row.hash].updated > row.watched_at) return;
+            // Берём серверную отметку, только если локальной нет или сервер новее либо дальше:
+            // старая или пустая серверная запись (watched_at = 0) не должна откатывать просмотр.
+            var local = viewed[row.hash];
+            if (local && !((row.watched_at || 0) > (local.updated || 0) || (row.percent || 0) > (local.percent || 0))) return;
             var road = { time: row.position || 0, duration: row.duration || 0, percent: row.percent || 0, updated: row.watched_at || 0 };
             if (row.extra) {
               try {
