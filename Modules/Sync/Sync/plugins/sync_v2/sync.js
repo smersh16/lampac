@@ -162,7 +162,7 @@
         Lampa.Storage.listener.follow('change', function(e) {
           if (sync_import_keys().indexOf(e.name) >= 0) {
             goExport(e.name);
-          } else if (e.name.indexOf('online_view') >= 0 || e.name.indexOf('torrents_view') >= 0) {
+          } else if (e.name.indexOf('online_view') >= 0 || e.name.indexOf('online_watched_last') >= 0 || e.name.indexOf('torrents_view') >= 0) {
             goExport('sync_view');
           }
         });
