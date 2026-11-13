@@ -222,9 +222,11 @@
             if (!row.hash || row.deleted) return;
             // Берём серверную отметку, только если локальной нет или сервер новее либо дальше:
             // старая или пустая серверная запись (watched_at = 0) не должна откатывать просмотр.
+            // Штамп арбитража сервера: changed_at, а у старых строк и старого сервера — watched_at.
+            var stamp = row.changed_at || row.watched_at || 0;
             var local = viewed[row.hash];
-            if (local && !((row.watched_at || 0) > (local.updated || 0) || (row.percent || 0) > (local.percent || 0))) return;
-            var road = { time: row.position || 0, duration: row.duration || 0, percent: row.percent || 0, updated: row.watched_at || 0 };
+            if (local && !(stamp > (local.updated || 0) || (row.percent || 0) > (local.percent || 0))) return;
+            var road = { time: row.position || 0, duration: row.duration || 0, percent: row.percent || 0, updated: stamp };
             if (row.extra) {
               try {
                 var extra = JSON.parse(row.extra);
