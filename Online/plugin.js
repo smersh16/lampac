@@ -758,23 +758,6 @@
         }
       }
     };
-    this.loadSegments = function (item, done) {
-      // метки AniSkip для аниме (ja + жанр «Анимация»), только 1 сезон; у провайдера свои метки приоритетнее (json_call.segments)
-      var m = object.movie || {};
-      if (item.segments || item.season != 1 || !item.episode || m.original_language !== 'ja' || !(m.genres || []).some(function (g) {
-        return g.id == 16;
-      })) return done();
-      var net = new Lampa.Reguest();
-      net.timeout(4000);
-      net.silent(
-        account(Defined.localhost + 'aniskip?e=' + item.episode + '&year=' + ((m.first_air_date || '').slice(0, 4) || 0) + '&title=' + encodeURIComponent(m.name || m.title || '')),
-        function (json) {
-          if (json && json.skip && json.skip.length) item.segments = json;
-          done();
-        },
-        done
-      );
-    };
     this.display = function (videos) {
       var _this5 = this;
       if (videos.length > 1 && videos.every(function (video) {
@@ -786,7 +769,6 @@
       }
       this.draw(videos, {
         onEnter: function onEnter(item, html) {
-          _this5.loadSegments(item, function () {
           _this5.getFileUrl(
             item,
             function (json, json_call) {
@@ -872,7 +854,6 @@
             },
             true
           );
-          });
         },
         onContextMenu: function onContextMenu(item, html, data, call) {
           _this5.getFileUrl(
