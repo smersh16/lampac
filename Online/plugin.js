@@ -1245,6 +1245,8 @@
         var fully = window.innerWidth > 480;
         var scroll_to_element = false;
         var scroll_to_mark = false;
+        var scroll_to_idx = -1;
+        var rows = [];
         items.forEach(function (element, index) {
           var episode =
             serial && episodes.length && !params.similars
@@ -1331,9 +1333,13 @@
           var image = html.find('.online-prestige__img');
           if (object.balanser) image.hide();
           if (!serial) {
-            if (choice.movie_view == hash_behold) scroll_to_element = html;
+            if (choice.movie_view == hash_behold) {
+              scroll_to_element = html;
+              scroll_to_idx = index;
+            }
           } else if (typeof episode_last !== 'undefined' && episode_last == episode_num) {
             scroll_to_element = html;
+            scroll_to_idx = index;
           }
           if (serial && !episode) {
             image.append(
@@ -1446,6 +1452,7 @@
             }
           });
           scroll.append(html);
+          rows.push({ element: element, html: html });
         });
         if (serial && episodes.length > items.length && !params.similars) {
           var left = episodes.slice(items.length);
@@ -1529,7 +1536,23 @@
           last = scroll_to_mark[0];
         }
         Lampa.Controller.enable('content');
+        if (object.lampac_continue) _this8.autoContinue(rows, scroll_to_idx, serial);
       });
+    };
+    // кнопка «Продолжить» с карточки: запускаем последнюю серию (или следующую, если она досмотрена)
+    // тем же балансером и озвучкой, что сохранены в choice; при расхождении только открываем список
+    this.autoContinue = function (rows, idx, serial) {
+      var resume = object.lampac_resume || {};
+      object.lampac_continue = false; // один раз: Activity.replace (фильтр) не должен перезапускать видео
+      var row = rows[idx];
+      if (row && serial && row.element.timeline && row.element.timeline.percent >= 95) row = rows[idx + 1] || null;
+      var same = balanser === resume.balanser && (!serial || !resume.season || (rows[idx] && rows[idx].element.season == resume.season));
+      if (!row || !same || (!serial && row.element.timeline && row.element.timeline.percent >= 95)) {
+        Lampa.Noty.show(Lampa.Lang.translate('lampac_continue_other'));
+        return;
+      }
+      last = row.html[0];
+      row.html.trigger('hover:enter');
     };
     /**
      * Меню
@@ -2019,6 +2042,18 @@
         en: 'No browsing history',
         uk: 'Немає історії перегляду',
         zh: '没有浏览历史'
+      },
+      lampac_continue: {
+        ru: 'Продолжить',
+        en: 'Continue',
+        uk: 'Продовжити',
+        zh: '继续'
+      },
+      lampac_continue_other: {
+        ru: 'Прежний источник или серия недоступны, выберите вручную',
+        en: 'Previous source or episode is unavailable, choose manually',
+        uk: 'Попереднє джерело або серія недоступні, оберіть вручну',
+        zh: '之前的来源或剧集不可用，请手动选择'
       },
       lampac_nolink: {
         ru: 'Не удалось извлечь ссылку',
@@ -2604,6 +2639,62 @@
     var button = LAMPAC_FULL_CARD_BUTTON; // нужна заглушка, а то при страте лампы говорит пусто
     resetTemplates();
 
+    // что смотрели ранее: балансер этого фильма + его choice (озвучка/сезон/серия) + строка из online_watched_last
+    function getResume(movie) {
+      try {
+        var bal = Lampa.Storage.cache('online_last_balanser', 3000, {})[movie.id];
+        if (!bal) return null;
+        var choice = Lampa.Storage.cache('online_choice_' + bal, 3000, {})[movie.id];
+        if (!choice) return null;
+        var seen = Lampa.Arrays.getKeys(choice.episodes_view || {}).length > 0 || !!choice.movie_view;
+        if (!seen) return null;
+        var title = movie.number_of_seasons ? movie.original_name : movie.original_title;
+        var w = Lampa.Storage.cache('online_watched_last', 5000, {})[Lampa.Utils.hash(title)] || {};
+        if (w.balanser && w.balanser !== bal) w = {};
+        var line = [];
+        if (w.season) line.push('S' + w.season);
+        if (w.episode) line.push('E' + w.episode);
+        if (w.voice_name) line.push(w.voice_name);
+        line.push(w.balanser_name || Lampa.Utils.capitalizeFirstLetter(bal));
+        return { balanser: bal, season: w.season || 0, episode: w.episode || 0, label: line.join(' · ') };
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function addContinueButton(btn, movie) {
+      var resume = getResume(movie);
+      if (!resume) return;
+      var cont = $(
+        '<div class="full-start__button selector view--online lampac--continue" data-subtitle="' +
+          escapeHtml(resume.label) +
+          '">' +
+          '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7 4.5v15l12-7.5-12-7.5z" fill="currentColor"/></svg>' +
+          '<span>' +
+          Lampa.Lang.translate('lampac_continue') +
+          '</span></div>'
+      );
+      cont.on('hover:enter', function () {
+        resetTemplates();
+        var id = Lampa.Utils.hash(movie.number_of_seasons ? movie.original_name : movie.original_title);
+        var all = Lampa.Storage.get('clarification_search', '{}');
+        Lampa.Activity.push({
+          url: '',
+          title: Lampa.Lang.translate('title_online'),
+          component: 'lampac',
+          search: all[id] ? all[id] : movie.title,
+          search_one: movie.title,
+          search_two: movie.original_title,
+          movie: movie,
+          page: 1,
+          clarification: all[id] ? true : false,
+          lampac_continue: true,
+          lampac_resume: resume
+        });
+      });
+      btn.after(cont);
+    }
+
     function addButton(e) {
       if (e.render.find('.lampac--button').length) return;
       var btn = $(Lampa.Lang.translate(button));
@@ -2627,6 +2718,7 @@
         });
       });
       e.render.after(btn);
+      addContinueButton(btn, e.movie);
     }
     Lampa.Listener.follow('full', function (e) {
       if (e.type == 'complite') {
