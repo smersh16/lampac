@@ -845,8 +845,8 @@
                   Lampa.Player.play(element);
                   Lampa.Player.playlist(playlist);
                   if (element.subtitles_call) _this5.loadSubtitles(element.subtitles_call);
-                  item.mark();
                   _this5.updateBalanser(balanser);
+                  item.mark();
                 } else {
                   Lampa.Noty.show(Lampa.Lang.translate('lampac_nolink'));
                 }
@@ -1539,15 +1539,25 @@
         if (object.lampac_continue) _this8.autoContinue(rows, scroll_to_idx, serial);
       });
     };
-    // кнопка «Продолжить» с карточки: запускаем последнюю серию (или следующую, если она досмотрена)
-    // тем же балансером и озвучкой, что сохранены в choice; при расхождении только открываем список
+    // кнопка «Продолжить» с карточки: запускаем серию, посчитанную в getResume (по Timeline), тем же балансером;
+    // если балансер сменился или серии нет в списке — только открываем список
     this.autoContinue = function (rows, idx, serial) {
       var resume = object.lampac_resume || {};
       object.lampac_continue = false; // один раз: Activity.replace (фильтр) не должен перезапускать видео
-      var row = rows[idx];
-      if (row && serial && row.element.timeline && row.element.timeline.percent >= 95) row = rows[idx + 1] || null;
-      var same = balanser === resume.balanser && (!serial || !resume.season || (rows[idx] && rows[idx].element.season == resume.season));
-      if (!row || !same || (!serial && row.element.timeline && row.element.timeline.percent >= 95)) {
+      var row = null;
+      if (balanser === resume.balanser) {
+        if (serial && resume.target) {
+          row =
+            rows.filter(function (r) {
+              return r.element.season == resume.target.season && r.element.episode == resume.target.episode;
+            })[0] || null;
+        } else if (idx >= 0) {
+          row = rows[idx];
+          var tl = row.element.timeline;
+          if (tl && tl.percent >= 95) row = serial ? rows[idx + 1] || null : null;
+        }
+      }
+      if (!row) {
         Lampa.Noty.show(Lampa.Lang.translate('lampac_continue_other'));
         return;
       }
@@ -2639,27 +2649,82 @@
     var button = LAMPAC_FULL_CARD_BUTTON; // нужна заглушка, а то при страте лампы говорит пусто
     resetTemplates();
 
-    // что смотрели ранее: балансер этого фильма + его choice (озвучка/сезон/серия) + строка из online_watched_last
+    // последняя серия с прогрессом по file_view (Timeline): его обновляет плеер и синхронизирует TimeCode,
+    // тогда как online_choice_* / online_watched_last пишутся только при запуске через «Онлайн» на этом устройстве
+    function lastWatched(movie) {
+      var list = (movie.seasons || [])
+        .filter(function (s) {
+          return s.season_number > 0 && s.episode_count > 0;
+        })
+        .map(function (s) {
+          return { n: s.season_number, c: s.episode_count };
+        })
+        .sort(function (a, b) {
+          return a.n - b.n;
+        });
+      if (!list.length) for (var k = 1; k <= (movie.number_of_seasons || 1); k++) list.push({ n: k, c: 100 });
+      for (var si = list.length - 1; si >= 0; si--) {
+        var s = list[si];
+        for (var e = s.c; e >= 1; e--) {
+          var tl = Lampa.Timeline.view(Lampa.Utils.hash([s.n, s.n > 10 ? ':' : '', e, movie.original_title].join('')));
+          if (tl && tl.percent > 0) {
+            return { season: s.n, episode: e, percent: tl.percent, count: s.c, next_season: list[si + 1] ? list[si + 1].n : 0 };
+          }
+        }
+      }
+      return null;
+    }
+
+    // что продолжать: балансер этого тайтла, озвучка и серия. Серия — по Timeline (следующая, если
+    // последняя просмотрена на >= 95%), запасной вариант — online_watched_last / choice.episodes_view
     function getResume(movie) {
       try {
         var bal = Lampa.Storage.cache('online_last_balanser', 3000, {})[movie.id];
         if (!bal) return null;
-        var choice = Lampa.Storage.cache('online_choice_' + bal, 3000, {})[movie.id];
-        if (!choice) return null;
-        var seen = Lampa.Arrays.getKeys(choice.episodes_view || {}).length > 0 || !!choice.movie_view;
-        if (!seen) return null;
+        var choice = Lampa.Storage.cache('online_choice_' + bal, 3000, {})[movie.id] || {};
         var title = movie.number_of_seasons ? movie.original_name : movie.original_title;
         var w = Lampa.Storage.cache('online_watched_last', 5000, {})[Lampa.Utils.hash(title)] || {};
         if (w.balanser && w.balanser !== bal) w = {};
+        var target = null;
+        if (movie.number_of_seasons) {
+          var lw = lastWatched(movie);
+          if (lw) {
+            target = { season: lw.season, episode: lw.episode };
+            if (lw.percent >= 95) {
+              if (lw.episode < lw.count) target.episode = lw.episode + 1;
+              else if (lw.next_season) target = { season: lw.next_season, episode: 1 };
+              else return null; // всё досмотрено
+            }
+          } else if (w.season && w.episode) target = { season: w.season, episode: w.episode };
+          else if (!Lampa.Arrays.getKeys(choice.episodes_view || {}).length) return null;
+        } else {
+          var mt = Lampa.Timeline.view(Lampa.Utils.hash(movie.original_title));
+          if (!choice.movie_view && !(mt && mt.percent > 0)) return null;
+          if (mt && mt.percent >= 95) return null;
+        }
         var line = [];
-        if (w.season) line.push('S' + w.season);
-        if (w.episode) line.push('E' + w.episode);
-        if (w.voice_name) line.push(w.voice_name);
+        if (target) line.push('S' + target.season, 'E' + target.episode);
+        var voice = w.voice_name || choice.voice_name || '';
+        if (voice) line.push(voice);
         line.push(w.balanser_name || Lampa.Utils.capitalizeFirstLetter(bal));
-        return { balanser: bal, season: w.season || 0, episode: w.episode || 0, label: line.join(' · ') };
+        return { balanser: bal, target: target, voice: voice, label: line.join(' · ') };
       } catch (err) {
         return null;
       }
+    }
+
+    // перед открытием списка подставляем озвучку и сезон, с которыми смотрели (на этом устройстве choice мог отстать)
+    function applyResume(movie, resume) {
+      var all = Lampa.Storage.cache('online_choice_' + resume.balanser, 3000, {});
+      var c = all[movie.id] || { season: 0, voice: 0, voice_name: '', voice_id: 0, episodes_view: {}, movie_view: '' };
+      // в online_watched_last имя озвучки обрезано до 30 символов с «...», такое не сопоставить
+      if (resume.voice && !/\.\.\.$/.test(resume.voice)) {
+        c.voice_name = resume.voice;
+        c.voice_url = '';
+      }
+      if (resume.target) c.season = Math.max(0, resume.target.season - 1);
+      all[movie.id] = c;
+      Lampa.Storage.set('online_choice_' + resume.balanser, all);
     }
 
     function addContinueButton(btn, movie) {
@@ -2676,6 +2741,7 @@
       );
       cont.on('hover:enter', function () {
         resetTemplates();
+        applyResume(movie, resume);
         var id = Lampa.Utils.hash(movie.number_of_seasons ? movie.original_name : movie.original_title);
         var all = Lampa.Storage.get('clarification_search', '{}');
         Lampa.Activity.push({

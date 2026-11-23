@@ -11,7 +11,7 @@
 | `Modules/Sync/Sync/plugins/bookmark.js` | сверка всегда полной выгрузкой `/dump` (дельты `/changelog` не сохраняли порядок истории, на устройствах она расходилась) | `49da6a9a55fd322217bb9cd24f69f88a` |
 | `Modules/Sync/Sync/plugins/sync_v2/sync.js` | выгрузка `sync_view` и при изменении `online_watched_last` | `a096a59ea4dba5d7309f9bd970b87934` |
 | `Modules/Sync/TimeCode/plugin.js` | `update()` на списках без открытой карточки вызывает `updateAll()` (дамп отметок); арбитраж по `changed_at`, локальный прогресс не откатывается | `0557411ceb61de37b07c702bb73368b2` |
-| `Online/plugin.js` | кнопка «Продолжить» на карточке: запуск последней (или следующей при просмотре ≥ 95%) серии тем же балансером и озвучкой из `online_choice_*`; при расхождении только открывает список | `09a857d14eaa86351c69d3d7bdc18d5c` (2026-11-22) |
+| `Online/plugin.js` | кнопка «Продолжить» на карточке: серия по Lampa.Timeline (file_view; следующая при просмотре ≥ 95%), озвучка из online_watched_last, тот же балансер; при расхождении только открывает список. Плюс updateBalanser вызывается до mark() | `0d5b243b5af882b56e63bb4a0b1a57dd` (2026-11-23) |
 
 ## Правки в отдельных репозиториях (подключены в `module/repository.yaml`, ветка `main`)
 
